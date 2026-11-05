@@ -18,6 +18,7 @@ package io.netty.handler.codec.compression;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -29,6 +30,9 @@ import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class JZlibTest extends ZlibTest {
 
@@ -84,6 +88,22 @@ public class JZlibTest extends ZlibTest {
         }
         deflater.end();
         return compressed.toByteArray();
+    }
+
+    @Test
+    public void testDecoderStopsAfterCorruptedData() {
+        byte[] corrupted = new byte[]{0x78, (byte) 0x9C, 0x00, 0x00, 0x00, (byte) 0xFF, (byte) 0xFF,
+                (byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF};
+        EmbeddedChannel ch = new EmbeddedChannel(new JZlibDecoder());
+        ByteBuf input = Unpooled.wrappedBuffer(corrupted);
+        assertThrows(DecompressionException.class, () -> ch.writeInbound(input));
+
+        assertTrue(((ZlibDecoder) ch.pipeline().first()).isClosed());
+
+        ByteBuf more = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4});
+        assertFalse(ch.writeInbound(more));
+
+        ch.finishAndReleaseAll();
     }
 
     private static byte[] jdkInflate(byte[] compressed) throws Exception {

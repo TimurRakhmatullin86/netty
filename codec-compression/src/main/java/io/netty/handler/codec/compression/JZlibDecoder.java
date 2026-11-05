@@ -144,6 +144,15 @@ public class JZlibDecoder extends ZlibDecoder {
             return;
         }
 
+        try {
+            doDecode(ctx, in, out);
+        } catch (Exception e) {
+            finished = true;
+            throw e;
+        }
+    }
+
+    private void doDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         final int inputLength = in.readableBytes();
         if (inputLength == 0) {
             return;

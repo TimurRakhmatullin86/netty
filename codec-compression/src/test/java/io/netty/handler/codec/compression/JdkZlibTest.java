@@ -417,8 +417,47 @@ public class JdkZlibTest extends ZlibTest {
                 new JdkZlibDecoder("another dictionary".getBytes(CharsetUtil.UTF_8), 0));
         final ByteBuf input = Unpooled.wrappedBuffer(compressed, 0, length);
         assertThrows(DecompressionException.class, () -> channel.writeInbound(input));
-        // the remaining input is decoded again when the channel is closed
-        assertThrows(DecompressionException.class, channel::finishAndReleaseAll);
+        // After an error the decoder discards all further input.
+        channel.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testDecoderStopsAfterCorruptedData() {
+        // Feed corrupted data — the first writeInbound must throw.
+        byte[] corrupted = new byte[]{0x78, (byte) 0x9C, 0x00, 0x00, 0x00, (byte) 0xFF, (byte) 0xFF,
+                (byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF};
+        EmbeddedChannel ch = new EmbeddedChannel(new JdkZlibDecoder());
+        ByteBuf input = Unpooled.wrappedBuffer(corrupted);
+        assertThrows(DecompressionException.class, () -> ch.writeInbound(input));
+
+        // The decoder must be closed now so that further data is silently discarded.
+        assertTrue(((ZlibDecoder) ch.pipeline().first()).isClosed());
+
+        // A second write must not throw — the data should be skipped.
+        ByteBuf more = Unpooled.wrappedBuffer(new byte[]{1, 2, 3, 4});
+        assertFalse(ch.writeInbound(more));
+
+        // Closing the channel must not throw either.
+        ch.finishAndReleaseAll();
+    }
+
+    @Test
+    public void testGzipDecoderStopsAfterCorruptedData() throws Exception {
+        byte[] data = "hello".getBytes(CharsetUtil.UTF_8);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        GZIPOutputStream gzipOut = new GZIPOutputStream(baos);
+        gzipOut.write(data);
+        gzipOut.close();
+
+        byte[] compressed = baos.toByteArray();
+        // Corrupt a byte in the compressed payload (after the 10-byte GZIP header).
+        compressed[12] ^= 0xFF;
+
+        EmbeddedChannel ch = new EmbeddedChannel(new JdkZlibDecoder(ZlibWrapper.GZIP, Integer.MAX_VALUE));
+        ByteBuf input = Unpooled.wrappedBuffer(compressed);
+        assertThrows(DecompressionException.class, () -> ch.writeInbound(input));
+        assertTrue(((ZlibDecoder) ch.pipeline().first()).isClosed());
+        ch.finishAndReleaseAll();
     }
 
     @Test
@@ -478,8 +517,8 @@ public class JdkZlibTest extends ZlibTest {
         assertThrows(DecompressionException.class, () -> {
             ch.writeInbound(Unpooled.wrappedBuffer(compressed));
         });
-        // the remaining input is decoded again when the channel is closed
-        assertThrows(DecompressionException.class, ch::finishAndReleaseAll);
+        // After an error the decoder discards all further input.
+        ch.finishAndReleaseAll();
     }
 
     @Test

@@ -215,6 +215,18 @@ public class JdkZlibDecoder extends ZlibDecoder {
             return;
         }
 
+        try {
+            doDecode(ctx, in, out);
+        } catch (Exception e) {
+            finished = true;
+            if (inflater != null) {
+                inflater.end();
+            }
+            throw e;
+        }
+    }
+
+    private void doDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         int readableBytes = in.readableBytes();
         if (readableBytes == 0) {
             return;
